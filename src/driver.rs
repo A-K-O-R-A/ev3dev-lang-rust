@@ -1,12 +1,12 @@
 //! Helper struct that manages attributes.
 //! It creates an `Attribute` instance if it does not exists or uses a cached one.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{self, Debug};
 use std::fs;
 use std::path::Path;
 use std::string::String;
+use std::sync::{Arc, RwLock};
 
 use crate::utils::OrErr;
 use crate::{Attribute, Ev3Error, Ev3Result, Port};
@@ -35,7 +35,7 @@ const fn get_driver_path() -> &'static str {
 pub struct Driver {
     class_name: String,
     name: String,
-    attributes: RefCell<HashMap<String, Attribute>>,
+    attributes: Arc<RwLock<HashMap<String, Attribute>>>,
 }
 
 impl Driver {
@@ -45,7 +45,7 @@ impl Driver {
         Driver {
             class_name: class_name.to_owned(),
             name: name.to_owned(),
-            attributes: RefCell::new(HashMap::new()),
+            attributes: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -130,22 +130,28 @@ impl Driver {
     /// Return the `Attribute` wrapper for the given `attribute_name`.
     /// Creates a new one if it does not exist.
     pub fn get_attribute(&self, attribute_name: &str) -> Attribute {
-        let mut attributes = self.attributes.borrow_mut();
+        let outer = self.attributes.clone();
+        let attributes = outer.read().unwrap();
 
-        if !attributes.contains_key(attribute_name) {
-            if let Ok(v) = Attribute::from_sys_class(
+        if let Some(attr) = attributes.get(attribute_name) {
+            attr.clone()
+        } else {
+            drop(attributes);
+
+            if let Ok(attribute) = Attribute::from_sys_class(
                 self.class_name.as_ref(),
                 self.name.as_ref(),
                 attribute_name,
             ) {
-                attributes.insert(attribute_name.to_owned(), v);
-            };
-        };
+                let mut guard = outer.write().unwrap();
+                guard.insert(attribute_name.to_owned(), attribute.clone());
 
-        attributes
-            .get(attribute_name)
-            .expect("Internal error in the attribute map")
-            .clone()
+                attribute
+            } else {
+                panic!("Error while accessing {}, {}, {} Internal error in the attribute map", &self.class_name, &self.name,
+                attribute_name);
+            }
+        }
     }
 }
 
