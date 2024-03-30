@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::string::String;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use crate::driver::DRIVER_PATH;
 use crate::utils::OrErr;
@@ -190,5 +190,15 @@ impl Attribute {
     /// Returns the path to the wrapped file.
     pub fn get_file_path(&self) -> PathBuf {
         self.file_path.clone()
+    }
+
+    /// Read and return the raw bytes of this attribute
+    pub fn get_raw_data(&self) -> Ev3Result<Vec<u8>> {
+        let mut data = Vec::new();
+
+        let mut file = self.file.lock().unwrap();
+        file.seek(SeekFrom::Start(0))?;
+        file.read_to_end(&mut data)?;
+        Ok(data)
     }
 }
